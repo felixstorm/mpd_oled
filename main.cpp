@@ -427,6 +427,37 @@ void draw_spect_display(ArduiPi_OLED &display, const display_info &disp_info)
 }
 
 
+void draw_main_display_simple(ArduiPi_OLED &display, const display_info &disp_info)
+{
+  const int H = 8;  // character height
+  const int W = 6;  // character width
+
+  draw_connection(display, 0, 0, disp_info.conn);
+  draw_triangle_slider(display, 3*W, 1, 12, 6, disp_info.status.get_volume());
+  if (disp_info.status.get_kbitrate() > 0)
+    draw_text(display, 6*W, 0, 4, disp_info.status.get_kbitrate_str());
+
+  int clock_offset = (disp_info.clock_format < 2) ? 0 : -1;
+  draw_time(display, 128-5*W+clock_offset, 0, 1, disp_info.clock_format);
+
+  vector<double> scroll_title(disp_info.scroll.begin(),
+                              disp_info.scroll.begin()+2);
+  draw_text_scroll(display, 0, 1*H+2, 10, disp_info.status.get_title(),
+      scroll_title, disp_info.text_change.secs(), 2);
+
+  vector<double> scroll_origin(disp_info.scroll.begin()+2,
+                               disp_info.scroll.begin()+4);
+  draw_text_scroll(display, 0, 3*H+4, 10, disp_info.status.get_origin(),
+      scroll_origin, disp_info.text_change.secs(), 2);
+
+  draw_solid_slider(display, 0, 6*H, 128, 4,
+      100*disp_info.status.get_progress());
+
+  draw_text(display, 0, 7*H, 8, disp_info.status.get_elapsed_time());
+  draw_text(display, 128-8*W, 7*H, 8, disp_info.status.get_total_time());
+}
+
+
 void draw_display(ArduiPi_OLED &display, const display_info &disp_info)
 {
   if (disp_info.status.get_state() == MPD_STATE_UNKNOWN ||
@@ -434,6 +465,15 @@ void draw_display(ArduiPi_OLED &display, const display_info &disp_info)
     draw_clock(display, disp_info);
   else
     draw_spect_display(display, disp_info);
+}
+
+void draw_display_simple(ArduiPi_OLED &display, const display_info &disp_info)
+{
+  if (disp_info.status.get_state() == MPD_STATE_UNKNOWN ||
+      disp_info.status.get_state() == MPD_STATE_STOP)
+    draw_clock(display, disp_info);
+  else
+    draw_main_display_simple(display, disp_info);
 }
 
 namespace {
@@ -535,6 +575,48 @@ int start_idle_loop(ArduiPi_OLED &display, FILE *fifo_file,
 }
 
 
+int start_simple_loop(ArduiPi_OLED &display, const OledOpts &opts)
+{
+  Timer timer_status_update, timer_display;
+  const double update_sec_display = 1.0/opts.framerate;
+  const double update_sec_status = 1;
+
+  display_info disp_info;
+  disp_info.scroll = opts.scroll;
+  disp_info.clock_format = opts.clock_format;
+  disp_info.spect.init(opts.bars, opts.gap);
+  disp_info.status.set_source(opts.source);
+  disp_info.status.init();
+
+  while (true) {
+
+    if (timer_status_update.finished()) {
+
+      display_info disp_info_new = disp_info;
+      disp_info_new.status.init();          // Update MPD status info
+      disp_info_new.conn_init();            // Update connection info
+      disp_info.update_from(disp_info_new);
+
+      timer_status_update.set_timer(update_sec_status);
+    }
+
+    if (timer_display.finished()) {
+
+      display.clearDisplay();
+      display.invertDisplay(get_invert(opts.invert));
+      draw_display_simple(display, disp_info);
+      display.display();
+
+      timer_display.set_timer(update_sec_display);
+    }
+
+    usleep(10000);
+  }
+
+  return 0;
+}
+
+
 int main(int argc, char **argv)
 {
   // Set locale to allow iconv transliteration to US-ASCII
@@ -548,35 +630,36 @@ int main(int argc, char **argv)
                     opts.rotate180))
     opts.error("could not initialise OLED");
 
-  // Create a FIFO for cava to write its raw output to
-  const string fifo_path_cava_out = msg_str("/tmp/cava_fifo_%d", getpid());
-  unlink(fifo_path_cava_out.c_str());
-  if(mkfifo(fifo_path_cava_out.c_str(), 0666) == -1)
-    opts.error("could not create cava output FIFO for writing: " +
-               string(strerror(errno)));
+  // // Create a FIFO for cava to write its raw output to
+  // const string fifo_path_cava_out = msg_str("/tmp/cava_fifo_%d", getpid());
+  // unlink(fifo_path_cava_out.c_str());
+  // if(mkfifo(fifo_path_cava_out.c_str(), 0666) == -1)
+  //   opts.error("could not create cava output FIFO for writing: " +
+  //              string(strerror(errno)));
 
-  // Create a temporary config file for cava
-  string config_file_name = print_config_file(opts.bars, opts.framerate,
-      opts.cava_method, opts.cava_source, fifo_path_cava_out);
-  if (config_file_name == "")
-    opts.error("could not create cava config file: " +
-               string(strerror(errno)));
+  // // Create a temporary config file for cava
+  // string config_file_name = print_config_file(opts.bars, opts.framerate,
+  //     opts.cava_method, opts.cava_source, fifo_path_cava_out);
+  // if (config_file_name == "")
+  //   opts.error("could not create cava config file: " +
+  //              string(strerror(errno)));
 
-  // Create a pipe to a cava subprocess
-  string cava_cmd = "cava -p " + config_file_name;
-  FILE *from_cava = popen(cava_cmd.c_str(), "r");
-  if (from_cava == NULL)
-    opts.error("could not start cava program: " +
-               string(strerror(errno)));
+  // // Create a pipe to a cava subprocess
+  // string cava_cmd = "cava -p " + config_file_name;
+  // FILE *from_cava = popen(cava_cmd.c_str(), "r");
+  // if (from_cava == NULL)
+  //   opts.error("could not start cava program: " +
+  //              string(strerror(errno)));
 
-  // Create a file stream to read cava's raw output from
-  FILE *fifo_file = fopen(fifo_path_cava_out.c_str(), "rb");
-  if(fifo_file == NULL)
-    opts.error("could not open cava output FIFO for reading");
+  // // Create a file stream to read cava's raw output from
+  // FILE *fifo_file = fopen(fifo_path_cava_out.c_str(), "rb");
+  // if(fifo_file == NULL)
+  //   opts.error("could not open cava output FIFO for reading");
 
   init_signals();
   atexit(cleanup);
-  int loop_ret = start_idle_loop(display, fifo_file, opts);
+  // int loop_ret = start_idle_loop(display, fifo_file, opts);
+  int loop_ret = start_simple_loop(display, opts);
 
   if(loop_ret != 0)
     exit(EXIT_FAILURE);

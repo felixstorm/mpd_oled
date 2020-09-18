@@ -1,3 +1,12 @@
+# Fork of https://github.com/antiprism/mpd_oled
+
+## Changes (targeted to my personal use case in a children's music player)
+* No spectrum, just infos (spectrum does not seem to work with VolumIO Spotify anyway and would probably consume quite some CPU power on a Raspberry Pi Zero)
+* Rearranged display to personal taste
+* A few minor enhancements
+
+---
+
 # Moode, Volumio, RuneAudio and MPD OLED Spectrum Display for Raspberry Pi
 
 The mpd_oled program displays an information screen including a music

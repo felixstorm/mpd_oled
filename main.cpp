@@ -469,8 +469,14 @@ void draw_display(ArduiPi_OLED &display, const display_info &disp_info)
 
 void draw_display_simple(ArduiPi_OLED &display, const display_info &disp_info)
 {
-  if (disp_info.status.get_state() == MPD_STATE_UNKNOWN ||
-      disp_info.status.get_state() == MPD_STATE_STOP)
+  static Counter pause_counter;
+
+  enum mpd_state mpd_state = disp_info.status.get_state();
+  if (mpd_state != MPD_STATE_PAUSE)
+    pause_counter.reset();
+
+  if (mpd_state == MPD_STATE_UNKNOWN || mpd_state == MPD_STATE_STOP ||
+      (mpd_state == MPD_STATE_PAUSE && pause_counter.secs() > 180))
     draw_clock(display, disp_info);
   else
     draw_main_display_simple(display, disp_info);
